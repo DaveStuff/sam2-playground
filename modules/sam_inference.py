@@ -7,21 +7,24 @@ import os
 from datetime import datetime
 import numpy as np
 import gradio as gr
+from gradio_i18n import Translate, gettext as _
 
 from modules.model_downloader import (
     AVAILABLE_MODELS, DEFAULT_MODEL_TYPE,
     is_sam_exist,
     download_sam_model_url
 )
-from modules.paths import (MODELS_DIR, TEMP_OUT_DIR, TEMP_DIR, MODEL_CONFIGS, OUTPUT_DIR)
-from modules.constants import (BOX_PROMPT_MODE, AUTOMATIC_MODE, COLOR_FILTER, PIXELIZE_FILTER, IMAGE_FILE_EXT)
+from modules.paths import (MODELS_DIR, TEMP_OUT_DIR, TEMP_DIR, MODEL_CONFIGS_WEBUI_PATH, MODEL_CONFIGS, OUTPUT_DIR)
+from modules.constants import (BOX_PROMPT_MODE, AUTOMATIC_MODE, COLOR_FILTER, PIXELIZE_FILTER, IMAGE_FILE_EXT,
+                               TRANSPARENT_VIDEO_FILE_EXT, TRANSPARENT_COLOR_FILTER)
 from modules.mask_utils import (
     invert_masks,
     save_psd_with_masks,
     create_mask_combined_images,
     create_mask_gallery,
     create_mask_pixelized_image,
-    create_solid_color_mask_image
+    create_solid_color_mask_image,
+    create_alpha_mask_image
 )
 from modules.video_utils import (get_frames_from_dir, create_video_from_frames, get_video_info, extract_frames,
                                  extract_sound, clean_temp_dir, clean_files_with_extension)
@@ -311,7 +314,7 @@ class SamInference:
 
         Args:
             image_prompt_input_data (Dict): The image prompt data.
-            filter_mode (str): The filter mode to apply. ["Solid Color", "Pixelize"]
+            filter_mode (str): The filter mode to apply. ["Solid Color", "Pixelize", "Transparent Color (Background Remover)"]
             frame_idx (int): The frame index of the video.
             pixel_size (int): The pixel size for the pixelize filter.
             color_hex (str): The color hex code for the solid color filter.
@@ -326,6 +329,7 @@ class SamInference:
 
         image, prompt = image_prompt_input_data["image"], image_prompt_input_data["points"]
         if not prompt:
+<<<<<<< HEAD
             error_message = ("No prompt data provided. If this is an incorrect flag, "
                              "Please press the eraser button (on the image prompter) and add your prompts again.")
             logger.error(error_message)
@@ -336,6 +340,17 @@ class SamInference:
             logger.error(error_message)
             raise gr.Error(error_message, duration=20)
 
+=======
+            error_message = (_("There's no prompt data"))
+            logger.error(error_message)
+            raise gr.Error(error_message, duration=20)
+
+        if not image:
+            error_message = "No image data provided."
+            logger.error(error_message)
+            raise gr.Error(error_message, duration=20)
+
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
         image = np.array(image.convert("RGB"))
 
         point_labels, point_coords, box = self.handle_prompt_data(prompt)
@@ -362,6 +377,9 @@ class SamInference:
         elif filter_mode == PIXELIZE_FILTER:
             image = create_mask_pixelized_image(image, generated_masks, pixel_size)
 
+        else:
+            image = create_alpha_mask_image(image, generated_masks)
+
         return image
 
     def create_filtered_video(self,
@@ -370,6 +388,10 @@ class SamInference:
                               frame_idx: int,
                               pixel_size: Optional[int] = None,
                               color_hex: Optional[str] = None,
+<<<<<<< HEAD
+=======
+                              output_mime_type: Optional[str] = None,
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
                               invert_mask: bool = False
                               ):
         """
@@ -378,21 +400,40 @@ class SamInference:
 
         Args:
             image_prompt_input_data (Dict): The image prompt data with "image" and "points" keys.
+<<<<<<< HEAD
             filter_mode (str): The filter mode to apply. ["Solid Color", "Pixelize"]
             frame_idx (int): The frame index of the video.
             pixel_size (int): The pixel size for the pixelize filter.
             color_hex (str): The color hex code for the solid color filter.
+=======
+            filter_mode (str): The filter mode to apply. ["Solid Color", "Pixelize", "Transparent Color (Background Remover)"]
+            frame_idx (int): The frame index of the video.
+            pixel_size (int): The pixel size for the pixelize filter.
+            color_hex (str): The color hex code for the solid color filter.
+            output_mime_type (str): Output video mime type such '.mp4', '.mov' etc.
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
             invert_mask (bool): Invert the mask output - used for background masking.
 
         Returns:
-            str: The output video path.
-            str: The output video path.
+            str: The output video path. ( Return to gr.Video )
+            str: The output video path. ( Return to gr.Files )
         """
 
         if self.video_predictor is None or self.video_inference_state is None:
             logger.exception("Error while adding filter to preview, load video predictor first")
             raise RuntimeError("Error while adding filter to preview")
 
+<<<<<<< HEAD
+=======
+        if output_mime_type is None:
+            if filter_mode == TRANSPARENT_COLOR_FILTER:
+                output_mime_type = ".mov"
+            else:
+                output_mime_type = ".mp4"
+
+        use_alpha = True if output_mime_type in TRANSPARENT_VIDEO_FILE_EXT else False
+
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
         prompt = image_prompt_input_data["points"]
         if not prompt:
             error_message = ("No prompt data provided. If this is an incorrect flag, "
@@ -430,7 +471,10 @@ class SamInference:
             elif filter_mode == PIXELIZE_FILTER:
                 filtered_image = create_mask_pixelized_image(orig_image, masks, pixel_size)
 
-            save_image(image=filtered_image, output_dir=TEMP_OUT_DIR)
+            else:
+                filtered_image = create_alpha_mask_image(orig_image, masks)
+
+            save_image(image=filtered_image, output_dir=TEMP_OUT_DIR, use_alpha=use_alpha)
 
         if len(video_segments) == 1:
             out_image = save_image(image=filtered_image, output_dir=output_dir)
@@ -440,6 +484,7 @@ class SamInference:
             frames_dir=TEMP_OUT_DIR,
             frame_rate=self.video_info.frame_rate,
             output_dir=output_dir,
+            output_mime_type=output_mime_type
         )
 
         return out_video, out_video

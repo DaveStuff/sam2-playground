@@ -16,7 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+<<<<<<< HEAD
         python: ["3.10"]
+=======
+        python: ["3.10", "3.11", "3.12"] # 3.13 is not valid for sam2
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
 
     steps:
       - name: Clean up space for action

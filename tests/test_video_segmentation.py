@@ -57,14 +57,26 @@ def test_video_segmentation(
     reason="Skipping because this test only works in GPU"
 )
 @pytest.mark.parametrize(
+<<<<<<< HEAD
     "model_name,video_path,gradio_prompt",
     [
         (TEST_MODEL, TEST_VIDEO_PATH, TEST_GRADIO_PROMPT_BOX)
+=======
+    "model_name,video_path,filter_mode,gradio_prompt",
+    [
+        (TEST_MODEL, TEST_VIDEO_PATH, COLOR_FILTER, TEST_GRADIO_PROMPT_BOX),
+        (TEST_MODEL, TEST_VIDEO_PATH, PIXELIZE_FILTER, TEST_GRADIO_PROMPT_BOX),
+        (TEST_MODEL, TEST_VIDEO_PATH, TRANSPARENT_COLOR_FILTER, TEST_GRADIO_PROMPT_BOX),
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
     ]
 )
 def test_filtered_video_creation_pipeline(
     model_name: str,
     video_path: str,
+<<<<<<< HEAD
+=======
+    filter_mode: str,
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
     gradio_prompt: np.ndarray,
 ):
     download_test_files()
@@ -81,9 +93,16 @@ def test_filtered_video_creation_pipeline(
 
     out_path, out_path = inferencer.create_filtered_video(
         image_prompt_input_data=prompt_data,
+<<<<<<< HEAD
         filter_mode=COLOR_FILTER,
         frame_idx=0,
         color_hex=DEFAULT_COLOR,
+=======
+        filter_mode=filter_mode,
+        frame_idx=0,
+        color_hex=DEFAULT_COLOR,
+        pixel_size=DEFAULT_PIXEL_SIZE,
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
         invert_mask=True
     )
 

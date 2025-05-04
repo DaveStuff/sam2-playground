@@ -1,19 +1,27 @@
 import argparse
 import gradio as gr
 from gradio_image_prompter import ImagePrompter
+from gradio_image_prompter.image_prompter import PromptValue
+from gradio_i18n import Translate, gettext as _
 from typing import List, Dict, Optional, Union
 import os
 import yaml
 
 from modules.logger_util import get_logger
+from modules.logger_util import get_logger
 from modules.html_constants import (HEADER, DEFAULT_THEME, CSS)
 from modules.sam_inference import SamInference
 from modules.model_downloader import DEFAULT_MODEL_TYPE
-from modules.paths import (OUTPUT_DIR, OUTPUT_PSD_DIR, SAM2_CONFIGS_DIR, TEMP_DIR, OUTPUT_FILTER_DIR, MODELS_DIR)
+from modules.paths import (OUTPUT_DIR, OUTPUT_PSD_DIR, SAM2_CONFIGS_DIR, TEMP_DIR, OUTPUT_FILTER_DIR, MODELS_DIR,
+                           I18N_YAML)
 from modules.utils import open_folder
 from modules.constants import (AUTOMATIC_MODE, BOX_PROMPT_MODE, PIXELIZE_FILTER, COLOR_FILTER, DEFAULT_COLOR,
-                               DEFAULT_PIXEL_SIZE, SOUND_FILE_EXT, IMAGE_FILE_EXT, VIDEO_FILE_EXT)
+                               DEFAULT_PIXEL_SIZE, SOUND_FILE_EXT, IMAGE_FILE_EXT, VIDEO_FILE_EXT, TRANSPARENT_COLOR_FILTER,
+                               SUPPORTED_VIDEO_FILE_EXT, TRANSPARENT_VIDEO_FILE_EXT)
 from modules.video_utils import get_frames_from_dir
+
+
+logger = get_logger()
 
 
 logger = get_logger()
@@ -27,13 +35,17 @@ class App:
             theme=self.args.theme,
             css=CSS
         )
+        self.i18n = Translate(I18N_YAML)
         self.sam_inf = SamInference(
             model_dir=self.args.model_dir,
             output_dir=self.args.output_dir
         )
         logger.info(f'device "{self.sam_inf.device}" is detected')
+        logger.info(f'device "{self.sam_inf.device}" is detected')
         self.image_modes = [AUTOMATIC_MODE, BOX_PROMPT_MODE]
         self.default_mode = BOX_PROMPT_MODE
+        self.filter_modes = [PIXELIZE_FILTER, COLOR_FILTER, TRANSPARENT_COLOR_FILTER]
+        self.default_filter = COLOR_FILTER
         self.filter_modes = [PIXELIZE_FILTER, COLOR_FILTER]
         self.default_filter = COLOR_FILTER
         self.default_color = DEFAULT_COLOR
@@ -41,7 +53,6 @@ class App:
         default_hparam_config_path = os.path.join(SAM2_CONFIGS_DIR, "default_hparams.yaml")
         with open(default_hparam_config_path, 'r') as file:
             self.default_hparams = yaml.safe_load(file)
-
     def mask_generation_parameters(self,
                                    hparams: Optional[Dict] = None):
         if hparams is None:
@@ -75,18 +86,32 @@ class App:
     def on_filter_mode_change(mode: str):
         return [
             gr.ColorPicker(visible=mode == COLOR_FILTER),
-            gr.Number(visible=mode == PIXELIZE_FILTER)
+            gr.Number(visible=mode == PIXELIZE_FILTER),
+            gr.Dropdown(choices=TRANSPARENT_VIDEO_FILE_EXT if mode == TRANSPARENT_COLOR_FILTER
+                        else SUPPORTED_VIDEO_FILE_EXT,
+                        value=TRANSPARENT_VIDEO_FILE_EXT[0] if mode == TRANSPARENT_COLOR_FILTER
+                        else SUPPORTED_VIDEO_FILE_EXT[0])
         ]
 
     def on_video_model_change(self,
                               model_type: str,
-                              vid_input: str):
+                              vid_input: Optional[str],
+                              progress: gr.Progress = gr.Progress()):
+        if not vid_input or vid_input is None:
+            return [
+               ImagePrompter(label=_("Prompt image with Box & Point"), type='pil', interactive=True, scale=5),
+               gr.Slider(label=_("Frame Index"), interactive=False)
+            ]
+
+        progress(0, desc=_("Extracting frames..."))
+
         self.sam_inf.init_video_inference_state(vid_input=vid_input, model_type=model_type)
         frames = get_frames_from_dir(vid_dir=TEMP_DIR)
         initial_frame, max_frame_index = frames[0], (len(frames)-1)
+        i_value = PromptValue(image=initial_frame, points=[])
         return [
-            ImagePrompter(label="Prompt image with Box & Point", value=initial_frame),
-            gr.Slider(label="Frame Index", value=0, interactive=True, step=1, minimum=0, maximum=max_frame_index)
+            ImagePrompter(label=_("Prompt image with Box & Point"), value=i_value),
+            gr.Slider(label=_("Frame Index"), value=0, interactive=True, step=1, minimum=0, maximum=max_frame_index)
         ]
 
     @staticmethod
@@ -94,19 +119,29 @@ class App:
         temp_dir = TEMP_DIR
         frames = get_frames_from_dir(vid_dir=temp_dir)
         selected_frame = frames[frame_idx]
-        return ImagePrompter(label=f"Prompt image with Box & Point", value=selected_frame)
+        n_value = PromptValue(image=selected_frame, points=[])
+        return ImagePrompter(label=_("Prompt image with Box & Point"), value=n_value)
 
     @staticmethod
     def on_prompt_change(prompt: Dict):
         image, points = prompt["image"], prompt["points"]
-        return gr.Image(label="Preview", value=image)
+        return gr.Image(label=_("Preview"), value=image)
 
     def launch(self):
         _mask_hparams = self.default_hparams["mask_hparams"]
 
         with self.demo:
-            md_header = gr.Markdown(HEADER, elem_id="md_header")
+            with self.i18n:
+                md_header = gr.Markdown(HEADER, elem_id="md_header")
+                md_prompt_guide = gr.Markdown(_("If you don't know how to prompt"))
 
+                with gr.Tabs():
+                    with gr.TabItem(_("Video Segmentation")):
+                        with gr.Column():
+                            file_vid_input = gr.File(label=_("Upload Input Video"), file_types=IMAGE_FILE_EXT + VIDEO_FILE_EXT)
+                            with gr.Row(equal_height=True):
+                                with gr.Column(scale=9):
+                                    vid_frame_prompter = ImagePrompter(label=_("Prompt image with Box & Point"), type='pil'),
             with gr.Tabs():
                 with gr.TabItem("Filter to Video"):
                     with gr.Column():
@@ -116,10 +151,30 @@ class App:
                                 with gr.Row():
                                     vid_frame_prompter = ImagePrompter(label="Prompt image with Box & Point", type='pil',
                                                                        interactive=True, scale=5)
-                                    img_preview = gr.Image(label="Preview", interactive=False, scale=5)
+                                    sld_frame_selector = gr.Slider(label=_("Frame Index"), interactive=False)
+                                    img_preview = gr.Image(label=_("Preview"), interactive=False, scale=5)
 
-                                sld_frame_selector = gr.Slider(label="Frame Index", interactive=False)
-
+                                with gr.Column(scale=1):
+                                    dd_models = gr.Dropdown(label=_("Model"), value=DEFAULT_MODEL_TYPE,
+                                                            choices=self.sam_inf.available_models)
+                                    dd_filter_mode = gr.Dropdown(label=_("Filter Modes"), interactive=True,
+                                                                 value=self.default_filter,
+                                                                 choices=self.filter_modes)
+                                    cp_color_picker = gr.ColorPicker(label=_("Solid Color"), interactive=True,
+                                                                     visible=self.default_filter == COLOR_FILTER,
+                                                                     value=self.default_color)
+                                    nb_pixel_size = gr.Number(label=_("Pixel Size"), interactive=True, minimum=1,
+                                                              visible=self.default_filter == PIXELIZE_FILTER,
+                                                              value=self.default_pixel_size)
+                                    dd_output_mime_type = gr.Dropdown(label=_("Video File Format"),
+                                                                      choices=TRANSPARENT_VIDEO_FILE_EXT
+                                                                      if self.default_filter == TRANSPARENT_COLOR_FILTER
+                                                                      else SUPPORTED_VIDEO_FILE_EXT,
+                                                                      value=TRANSPARENT_VIDEO_FILE_EXT[0]
+                                                                      if self.default_filter == TRANSPARENT_COLOR_FILTER
+                                                                      else SUPPORTED_VIDEO_FILE_EXT[0])
+                                    cb_invert_mask = gr.Checkbox(label=_("invert mask"), value=_mask_hparams["invert_mask"])
+                                    btn_generate_preview = gr.Button(_("GENERATE PREVIEW"))
                             with gr.Column(scale=1):
                                 dd_models = gr.Dropdown(label="Model", value=DEFAULT_MODEL_TYPE,
                                                         choices=self.sam_inf.available_models)
@@ -135,28 +190,79 @@ class App:
                                 cb_invert_mask = gr.Checkbox(label="invert mask", value=_mask_hparams["invert_mask"])
                                 btn_generate_preview = gr.Button("GENERATE PREVIEW")
 
-                    with gr.Row():
-                        btn_generate = gr.Button("GENERATE", variant="primary")
-                    with gr.Row():
-                        vid_output = gr.Video(label="Output Video", interactive=False)
-                        with gr.Column():
-                            output_file = gr.File(label="Downloadable Output File", scale=9)
-                            btn_open_folder = gr.Button("📁\nOpen Output folder", scale=1)
+                        with gr.Row():
+                            btn_generate = gr.Button(_("GENERATE VIDEO"), variant="primary")
+                        with gr.Row():
+                            vid_output = gr.Video(label=_("Output Video"), interactive=False, scale=7)
+                            with gr.Column(scale=2):
+                                output_file = gr.File(label=_("Downloadable Output File"), scale=9)
+                                btn_open_folder = gr.Button(_("📁 Open Output folder"), scale=1)
 
-                    file_vid_input.change(fn=self.on_video_model_change,
-                                          inputs=[dd_models, file_vid_input],
-                                          outputs=[vid_frame_prompter, sld_frame_selector])
-                    dd_models.change(fn=self.on_video_model_change,
-                                     inputs=[dd_models, file_vid_input],
-                                     outputs=[vid_frame_prompter, sld_frame_selector])
-                    sld_frame_selector.change(fn=self.on_frame_change,
-                                              inputs=[sld_frame_selector],
-                                              outputs=[vid_frame_prompter],)
-                    dd_filter_mode.change(fn=self.on_filter_mode_change,
-                                          inputs=[dd_filter_mode],
-                                          outputs=[cp_color_picker,
-                                                   nb_pixel_size])
+                        file_vid_input.change(fn=self.on_video_model_change,
+                                              inputs=[dd_models, file_vid_input],
+                                              outputs=[vid_frame_prompter, sld_frame_selector])
+                        dd_models.change(fn=self.on_video_model_change,
+                                         inputs=[dd_models, file_vid_input],
+                                         outputs=[vid_frame_prompter, sld_frame_selector])
+                        sld_frame_selector.change(fn=self.on_frame_change,
+                                                  inputs=[sld_frame_selector],
+                                                  outputs=[vid_frame_prompter])
+                        dd_filter_mode.change(fn=self.on_filter_mode_change,
+                                              inputs=[dd_filter_mode],
+                                              outputs=[cp_color_picker, nb_pixel_size, dd_output_mime_type])
 
+                        preview_params = [vid_frame_prompter, dd_filter_mode, sld_frame_selector, nb_pixel_size,
+                                          cp_color_picker, cb_invert_mask]
+                        video_params = [vid_frame_prompter, dd_filter_mode, sld_frame_selector, nb_pixel_size,
+                                        cp_color_picker, dd_output_mime_type, cb_invert_mask]
+                        btn_generate_preview.click(fn=self.sam_inf.add_filter_to_preview,
+                                                   inputs=preview_params,
+                                                   outputs=[img_preview])
+                        btn_generate.click(fn=self.sam_inf.create_filtered_video,
+                                           inputs=video_params,
+                                           outputs=[vid_output, output_file])
+                        btn_open_folder.click(fn=lambda: open_folder(os.path.join(self.args.output_dir, "filter")),
+                                              inputs=None,
+                                              outputs=None)
+
+                    with gr.TabItem(_("Layer Divider")):
+                        with gr.Row():
+                            with gr.Column(scale=5):
+                                img_input = gr.Image(label=_("Input image here"), visible=self.default_mode == AUTOMATIC_MODE)
+                                img_input_prompter = ImagePrompter(label=_("Prompt image with Box & Point"), type='pil',
+                                                                   visible=self.default_mode == BOX_PROMPT_MODE)
+
+                            with gr.Column(scale=5):
+                                dd_input_modes = gr.Dropdown(label=_("Image Input Mode"), value=self.default_mode,
+                                                             choices=self.image_modes)
+                                dd_models = gr.Dropdown(label=_("Model"), value=DEFAULT_MODEL_TYPE,
+                                                        choices=self.sam_inf.available_models)
+                                cb_invert_mask = gr.Checkbox(label=_("invert mask"), value=_mask_hparams["invert_mask"])
+
+                                with gr.Accordion(_("Mask Parameters"), open=False, visible=self.default_mode == AUTOMATIC_MODE) as acc_mask_hparams:
+                                    mask_hparams_component = self.mask_generation_parameters(_mask_hparams)
+
+                                cb_multimask_output = gr.Checkbox(label=_("multimask_output"), value=_mask_hparams["multimask_output"])
+
+                        with gr.Row():
+                            btn_generate = gr.Button(_("GENERATE PSD"), variant="primary")
+                        with gr.Row():
+                            gallery_output = gr.Gallery(label=_("Output images will be shown here"))
+                            with gr.Column():
+                                output_file = gr.File(label=_("Generated psd file"), scale=9)
+                                btn_open_folder = gr.Button(_("📁 Open PSD folder"), scale=1)
+
+                        input_params = [img_input, img_input_prompter, dd_input_modes, dd_models, cb_invert_mask]
+                        mask_hparams = mask_hparams_component + [cb_multimask_output]
+                        input_params += mask_hparams
+
+                        btn_generate.click(fn=self.sam_inf.divide_layer,
+                                           inputs=input_params, outputs=[gallery_output, output_file])
+                        btn_open_folder.click(fn=lambda: open_folder(os.path.join(self.args.output_dir, "psd")),
+                                              inputs=None, outputs=None)
+                        dd_input_modes.change(fn=self.on_mode_change,
+                                              inputs=[dd_input_modes],
+                                              outputs=[img_input, img_input_prompter, acc_mask_hparams])
                     preview_params = [vid_frame_prompter, dd_filter_mode, sld_frame_selector, nb_pixel_size,
                                       cp_color_picker, cb_invert_mask]
                     btn_generate_preview.click(fn=self.sam_inf.add_filter_to_preview,
@@ -218,7 +324,14 @@ class App:
                 "username": self.args.username,
                 "password": self.args.password
             } if self.args.username and self.args.password else None
-        )
+            share=self.args.share,
+            server_name=self.args.server_name,
+            server_port=self.args.server_port,
+            root_path=self.args.root_path,
+            auth={
+                "username": self.args.username,
+                "password": self.args.password
+            } if self.args.username and self.args.password else None)
 
 
 if __name__ == "__main__":
@@ -231,6 +344,12 @@ if __name__ == "__main__":
                         help='Whether to automatically start Gradio app or not')
     parser.add_argument('--share', type=bool, default=False, nargs='?', const=True,
                         help='Whether to create a public link for the app or not')
+    parser.add_argument('--theme', type=str, default=None, help='Gradio Blocks theme')
+    parser.add_argument('--server_name', type=str, default=None, help='Gradio server host')
+    parser.add_argument('--server_port', type=int, default=None, help='Gradio server port')
+    parser.add_argument('--root_path', type=str, default=None, help='Gradio root path')
+    parser.add_argument('--username', type=str, default=None, help='Gradio authentication username')
+    parser.add_argument('--password', type=str, default=None, help='Gradio authentication password')
     parser.add_argument('--theme', type=str, default=DEFAULT_THEME, help='Gradio Blocks theme')
     parser.add_argument('--server_name', type=str, default=None, help='Gradio server host')
     parser.add_argument('--server_port', type=int, default=None, help='Gradio server port')

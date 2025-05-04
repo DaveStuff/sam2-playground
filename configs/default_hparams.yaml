@@ -10,4 +10,8 @@ mask_hparams:
   min_mask_region_area: 25.0
   use_m2m: true
   multimask_output: true
+<<<<<<< HEAD
   invert_mask: false
+=======
+  invert_mask: true
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92

@@ -31,7 +31,11 @@ To segment only the face, place positive points (blue dots) on the face and a ne
 
 
 ### Known bugs in the Web UI
+<<<<<<< HEAD
 In the "Filter to Video" tab, you should reset the prompt by pressing the eraser button on the image prompter whenever you change the frame index, as the previous prompt remains even after you've changed the frame index. <br>
+=======
+In the "Video Segmentation" tab, you should reset the prompt by pressing the eraser button on the image prompter whenever you change the frame index, as the previous prompt remains even after you've changed the frame index. <br>
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
 
 ![eraser](https://github.com/jhj0517/sam2-playground/blob/master/docs/eraser_button.png)
 

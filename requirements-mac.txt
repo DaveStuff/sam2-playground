@@ -1,7 +1,13 @@
 torch
 torchvision
 pytest
+<<<<<<< HEAD
 gradio
+=======
+wheel
+gradio==4.44.1
+git+https://github.com/jhj0517/gradio-i18n.git@fix/encoding-error
+>>>>>>> de28ecaff3782f8754a9ca331be603b2f5bc1b92
 git+https://github.com/jhj0517/gradio-image-prompter.git
 opencv-python
 pycocotools
